@@ -13,19 +13,8 @@ if 'last_alert_ids' not in st.session_state:
     st.session_state.last_alert_ids = set()
 if 'monitoring_active' not in st.session_state:
     st.session_state.monitoring_active = False
-if 'custom_devices' not in st.session_state:
-    st.session_state.custom_devices = []
 
-# Default devices
-DEFAULT_DEVICES = ["Camera", "Smart Lock", "Thermostat", "Light", "Speaker"]
-
-# Get active devices (custom or default)
-def get_active_devices():
-    if st.session_state.custom_devices:
-        return st.session_state.custom_devices
-    return DEFAULT_DEVICES
-
-# Page Config
+# ---------------- Page Config ----------------
 st.set_page_config(
     page_title="Smart Home Intrusion Detector",
     page_icon="🏠",
@@ -37,59 +26,8 @@ st.write("AI-based detection of anomalous smart home network traffic.")
 
 st.divider()
 
-# Device Configuration UI
-with st.sidebar.expander("🔧 Device Configuration", expanded=False):
-    st.caption("Add and manage custom smart home devices")
-    
-    # Input for new device
-    new_device = st.text_input(
-        "Device Name",
-        placeholder="e.g., Living Room Camera",
-        key="new_device_input"
-    )
-    
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        if st.button("➕ Add Device", use_container_width=True):
-            if new_device.strip():
-                if new_device not in st.session_state.custom_devices:
-                    st.session_state.custom_devices.append(new_device)
-                    st.success(f"✅ Added: {new_device}")
-                    st.rerun()
-                else:
-                    st.warning(f"⚠️ Device '{new_device}' already exists")
-            else:
-                st.error("Please enter a device name")
-    
-    with col2:
-        if st.button("🔄 Reset", use_container_width=True):
-            st.session_state.custom_devices = []
-            st.info("Reset to default devices")
-            st.rerun()
-    
-    # Display configured devices
-    st.markdown("---")
-    st.write("**Active Devices:**")
-    
-    active_devices = get_active_devices()
-    if active_devices:
-        for i, device in enumerate(active_devices):
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                st.write(f"- {device}")
-            with col2:
-                if st.session_state.custom_devices:  # Only show delete for custom devices
-                    if st.button("❌", key=f"remove_{device}_{i}"):
-                        st.session_state.custom_devices.remove(device)
-                        st.rerun()
-    else:
-        st.info(f"Using {len(DEFAULT_DEVICES)} default devices")
-    
-    # Show device count
-    st.caption(f"Total: {len(active_devices)} device(s)")
-
-# Email Settings UI
-with st.sidebar.expander("✉️ Email Settings (optional)", expanded=False):
+# ---------------- Email Settings UI ----------------
+with st.sidebar.expander("Email Settings (optional)", expanded=False):
     st.caption("Configure SMTP to receive email alerts for MEDIUM/HIGH risks.")
     with st.form(key="smtp_form"):
         smtp_host = st.text_input("SMTP Host", value=st.session_state.get('smtp_config', {}).get('SMTP_HOST') if 'smtp_config' in st.session_state else "")
@@ -129,19 +67,19 @@ if st.sidebar.button('Test SMTP connection'):
     else:
         st.sidebar.error(msg)
 
-# Data Simulation
+# ---------------- Data Simulation ----------------
 st.subheader("📡 Simulated Network Traffic")
 
 def generate_data():
     np.random.seed(42)
-    devices = get_active_devices()
+    devices = ["Camera", "Smart Lock", "Thermostat", "Light", "Speaker"]
 
     n = 120
     packets = np.random.normal(300, 60, n).astype(int)
     devices_col = np.random.choice(devices, n)
 
     # Timestamps: one per minute ending now
-    timestamps = pd.date_range(end=pd.Timestamp.now(), periods=n, freq='min')
+    timestamps = pd.date_range(end=pd.Timestamp.now(), periods=n, freq='T')
 
     # Inject anomalies
     for i in np.random.choice(range(n), 10, replace=False):
@@ -156,12 +94,12 @@ def generate_data():
 
 def add_incoming_traffic(num_packets=10):
     """Simulate new incoming traffic and detect anomalies in real-time."""
-    devices = get_active_devices()
+    devices = ["Camera", "Smart Lock", "Thermostat", "Light", "Speaker"]
     
     # Generate new traffic
     new_packets = np.random.normal(300, 60, num_packets).astype(int)
     new_devices = np.random.choice(devices, num_packets)
-    new_timestamps = pd.date_range(start=st.session_state.traffic_data['Timestamp'].max() + timedelta(minutes=1), periods=num_packets, freq='min')
+    new_timestamps = pd.date_range(start=st.session_state.traffic_data['Timestamp'].max() + timedelta(minutes=1), periods=num_packets, freq='T')
     
     # Randomly inject attack traffic
     attack_indices = np.random.choice(range(num_packets), max(1, num_packets // 5), replace=False)
@@ -183,6 +121,7 @@ def add_incoming_traffic(num_packets=10):
     # Send alerts for newly detected HIGH/MEDIUM anomalies
     for idx, row in results.iterrows():
         if row["Risk"] != "LOW":
+            # Create a unique ID for this alert to avoid duplicates
             alert_id = hash((row["Device"], row["Timestamp"], row["Risk"]))
             
             if alert_id not in st.session_state.last_alert_ids:
@@ -199,6 +138,14 @@ def add_incoming_traffic(num_packets=10):
     return results
 
 df = generate_data()
+# Simulation controls
+simulate_attack = st.sidebar.checkbox("Enable attack simulation", value=False)
+if simulate_attack:
+    # Inject a stronger burst of anomalies to simulate attack
+    for i in np.random.choice(range(len(df)), 15, replace=False):
+        df.loc[i, 'Packets'] = df.loc[i, 'Packets'] + np.random.randint(500, 1500)
+    st.warning("Attack simulation enabled — anomalous traffic injected.")
+
 st.dataframe(df, use_container_width=True)
 
 st.divider()
@@ -222,10 +169,11 @@ with col3:
     if st.button("🚨 Simulate Attack"):
         if len(st.session_state.traffic_data) == 0:
             st.session_state.traffic_data = generate_data()
-        devices = get_active_devices()
+        # Inject strong attack traffic
+        devices = ["Camera", "Smart Lock", "Thermostat", "Light", "Speaker"]
         attack_packets = np.random.randint(1200, 2000, 20)
         attack_devices = np.random.choice(devices, 20)
-        attack_timestamps = pd.date_range(start=st.session_state.traffic_data['Timestamp'].max() + timedelta(minutes=1), periods=20, freq='min')
+        attack_timestamps = pd.date_range(start=st.session_state.traffic_data['Timestamp'].max() + timedelta(minutes=1), periods=20, freq='T')
         
         attack_data = pd.DataFrame({
             "Device": attack_devices,
@@ -234,6 +182,7 @@ with col3:
         })
         st.session_state.traffic_data = pd.concat([st.session_state.traffic_data, attack_data], ignore_index=True)
         
+        # Detect and alert
         results = detect_anomalies(st.session_state.traffic_data)
         for idx, row in results.iterrows():
             if row["Risk"] != "LOW":
@@ -250,6 +199,7 @@ with col3:
                     st.session_state.last_alert_ids.add(alert_id)
         st.warning("🚨 Attack simulated — HIGH packet traffic injected and alerts triggered!")
 
+# Display current traffic data
 if len(st.session_state.traffic_data) > 0:
     st.write(f"**Total packets monitored:** {len(st.session_state.traffic_data)}")
     st.dataframe(st.session_state.traffic_data.tail(20), use_container_width=True)
@@ -258,22 +208,25 @@ else:
 
 st.divider()
 
-# Detection (Demo Mode)
+# ---------------- Detection (Demo Mode) ----------------
 st.subheader("🧠 Anomaly Detection (Demo with Initial Data)")
 
 results = detect_anomalies(df)
+# Display results with SHAP explanations (if available)
 display_cols = ['Device','Packets','Timestamp','Risk','RiskScore','Explanation','CyberContext']
 if 'SHAP_Explanation' in results.columns:
     display_cols.append('SHAP_Explanation')
 st.dataframe(results[display_cols].fillna(''), use_container_width=True)
 
+# Simple risk distribution
 st.bar_chart(results['Risk'].value_counts())
 
 st.divider()
 
-# Alerts
+# ---------------- Alerts ----------------
 st.subheader("🚨 Alerts")
 
+# Alerts from demo data (initial load only)
 for _, row in results.iterrows():
     if row["Risk"] != "LOW":
         alert_id = hash((row["Device"], row["Timestamp"], row["Risk"]))
@@ -290,6 +243,7 @@ for _, row in results.iterrows():
 
 st.divider()
 
+# Alert Dashboard (real-time, updated as you interact)
 alerts.show_alert_dashboard()
 
 st.divider()
